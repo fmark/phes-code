@@ -22,11 +22,10 @@ from utils import MultiBandBlockIO
 PIXEL_SIZE = 250
 DEM_NO_DATA = -3.4028235e+38
 CACHE_BLOCKS = 32000
-MAX_SLOPE = 15.0
+MAX_SLOPE = 1.5
 # =============================================================================
 def Usage():
-    print('Usage: find_pixel_pairs.py indem inslopeslope outfile')
-    print('')
+    print('Usage: find_pixel_pairs.py indem inslopeslope outfile\n')
     sys.exit( 1 )
 
 # =============================================================================
@@ -66,91 +65,123 @@ outband.Fill(0.0, 0.0)
 io = MultiBandBlockIO((indemband, inslopeband, outband), CACHE_BLOCKS, True)
 
 search_radius_constant = 10.0 / PIXEL_SIZE
-count = 0
-total_count = indemband.XSize * indemband.YSize
+match_count = 0
+pixel_count = 0
+total_pixel_count = indemband.XSize * indemband.YSize
 locale.setlocale(locale.LC_ALL, "")
 start_time = time.time()
-for y in xrange(indemband.YSize - 1, -1, -1):
-    scanline_dem = indemband.ReadAsArray(0, y, indemband.XSize, 1, indemband.XSize, 1)[0]
-    scanline_slope = inslopeband.ReadAsArray(0, y, indemband.XSize, 1, indemband.XSize, 1)[0]
-    for x in xrange(0, len(scanline_dem)):
-        count += 1
-        if count % 1000 == 0:
-            s = ("Scanned neighbourhood in %s of %s pixels (%.2f%%). " %
-                 (locale.format('%d', count, True), 
-                  locale.format('%d', total_count, True), 
-                  float(count)/total_count * 100))
-            if count >= 10000:
-                now = time.time()
-                seconds_remaining = ((total_count - count) * 
-                                     ((now - start_time) / count))
-                fin = time.localtime(now + seconds_remaining)
-                s += ("ETA %2d:%2d, %2d/%02d/%d." % 
-                      (fin.tm_hour, fin.tm_min, fin.tm_mday,
-                      fin.tm_mon, fin.tm_year))
-            print s
-        elevation = scanline_dem[x]
-        origin_slope = scanline_slope[x]
-        if elevation == numpy.float32(DEM_NO_DATA):
-            continue
-        if (origin_slope == numpy.float32(DEM_NO_DATA) or
-            origin_slope > numpy.float32(MAX_SLOPE)):
-            continue
-        # elevation is in meters.  We want a 1 in 10 slope, so there is no point
-        # searching farther than 10 times the elevation (unless we have
-        # land below sea level).
-        search_radius = elevation * search_radius_constant + 1
-        extent = io.search_extent(x, y, search_radius)
-        # we want to iterate over the search area one block at a time in order
-        # to minimise the amount of IO.  First we find which blocks to search:
-        block_extent = io.find_block_extent(extent)
-        for block_x in xrange(block_extent[0], block_extent[2] + 1):
-            for block_y in xrange(block_extent[1], block_extent[3] + 1):
-                # Get this block in the registered bands
-                demblock, slopeblock, outblock = (
-                    io.get_block_in_bands(block_x, block_y) )
-                # Find the subset of pixels in this block that area within
-                # the search radius
-                cur_block_extent = io.block_to_pixel_extent(
-                    block_x, block_y)
-                subset = io.intersection((extent, cur_block_extent))
-                # translate the subset coords back to the coords of the 
-                # array within the block
-                xoff = subset[0] - cur_block_extent[0]
-                yoff = subset[1] - cur_block_extent[1]
-                xcount = subset[2] - subset[0]
-                ycount = subset[3] - subset[1]
-                # Blocks are reverse indexed, i.e. instead of being
-                # block[x][y] they are block[y][x]
-                for block_j in xrange(yoff, yoff + ycount):
-                    for block_i in xrange(xoff, xoff + xcount):
-                        # For each test_pixel in the search radius:
-                        #   if output is already 1 (matched), then continue
-                        if outblock.data[block_j][block_i] != (
-                            numpy.uint8(1) ):
-                            # if slope is too great, then set 0
-                            slope = slopeblock.data[block_j][block_i]
-                            if slope <= MAX_SLOPE:
-                                # Look for downhill gradient of >= 0.1 
-                                # for a 1 in 10 slope
-                                new_e = demblock.data[block_j][block_i]
-                                elevation_delta = elevation - new_e
-                                if elevation_delta > 0:
-                                    new_x, new_y = io.block_to_pixel_coord(
-                                        block_x, block_y)
-                                    new_x += block_i
-                                    new_y += block_j
-                                    dist = (((x - new_x) * PIXEL_SIZE)**2 + 
-                                            ((y - new_y) * PIXEL_SIZE)**2)
-                                    gradient = (float(elevation_delta) / 
-                                                numpy.sqrt(dist))
-                                    
-                                    if gradient >= 0.1:
-                                        outblock.data[block_j][block_i] = 1
-                                        outblock.dirty = True
-                # Try to ensure memory is released
-                demblock, outblock, slopeblock = None, None, None
-                del demblock, outblock, slopeblock
-        #      
-print (x, y, elevation, search_radius, extent, cur_block_extent, subset)
+for origin_xblock in xrange(io.xblockcount):
+    for origin_yblock in xrange(io.yblockcount):
+        origin_demblock, origin_slopeblock, origin_outblock = (
+                    io.get_block_in_bands(origin_xblock, origin_yblock))
+        origin_pixel_xoffset, origin_pixel_yoffset = io.block_to_pixel_coord(
+            origin_xblock, origin_yblock)
+        for origin_block_iy in xrange(origin_demblock._height):
+            #find "global" pixel x,y coordinate
+            y = origin_block_iy + origin_pixel_yoffset
+            for origin_block_ix in xrange(origin_demblock._width):
+                x = origin_block_ix + origin_pixel_xoffset
+
+                # progress bar related stuff
+                pixel_count += 1
+                if pixel_count % 1000 == 0:
+                    s = ("Scanned %s of %s pixels (%.2f%%), total %d matches. " %
+                         (locale.format('%d', pixel_count, True), 
+                          locale.format('%d', total_pixel_count, True), 
+                          float(pixel_count)/total_pixel_count * 100,
+                          match_count))
+                    if pixel_count >= 10000:
+                        now = time.time()
+                        seconds_remaining = ((total_pixel_count - pixel_count) * 
+                                             ((now - start_time) / pixel_count))
+                        fin = time.localtime(now + seconds_remaining)
+                        s += ("ETA %2d:%2d, %2d/%02d/%d." % 
+                              (fin.tm_hour, fin.tm_min, fin.tm_mday,
+                               fin.tm_mon, fin.tm_year))
+                    print s
+
+                # numpy arrays are accessed array[y][x]
+                elevation = origin_demblock.data[origin_block_iy][origin_block_ix]
+                origin_slope = origin_slopeblock.data[origin_block_iy][origin_block_ix]
+
+                if elevation == numpy.float32(DEM_NO_DATA):
+                    continue
+                if (origin_slope == numpy.float32(DEM_NO_DATA) or
+                    origin_slope > numpy.float32(MAX_SLOPE)):
+                    continue
+                # elevation is in meters.  We want a 1 in 10 slope, so there is no point
+                # searching farther than 10 times the elevation (unless we have
+                # land below sea level).
+                search_radius = elevation * search_radius_constant + 1
+                extent = io.search_extent(x, y, search_radius)
+                # we want to iterate over the search area one block at a time in order
+                # to minimise the amount of IO.  First we find which blocks to search:
+                block_extent = io.find_block_extent(extent)
+                for block_x in xrange(block_extent[0], block_extent[2] + 1):
+                    for block_y in xrange(block_extent[1], block_extent[3] + 1):
+                        # Get this block in the registered bands
+                        demblock, slopeblock, outblock = (
+                            io.get_block_in_bands(block_x, block_y) )
+                        # Find the subset of pixels in this block that area within
+                        # the search radius
+                        cur_block_extent = io.block_to_pixel_extent(
+                            block_x, block_y)
+                        subset = io.intersection((extent, cur_block_extent))
+                        # translate the subset coords back to the coords of the 
+                        # array within the block
+                        xoff = subset[0] - cur_block_extent[0]
+                        yoff = subset[1] - cur_block_extent[1]
+                        xcount = subset[2] - subset[0]
+                        ycount = subset[3] - subset[1]
+                        # Blocks are reverse indexed, i.e. instead of being
+                        # block[x][y] they are block[y][x]
+                        for block_j in xrange(yoff, yoff + ycount):
+                            for block_i in xrange(xoff, xoff + xcount):
+                                # For each test_pixel in the search radius:
+                                #   if output is already 1 (matched), then continue
+                                if (outblock.data[block_j][block_i] == 
+                                    numpy.uint8(0) or 
+                                    origin_outblock.data[origin_block_iy][origin_block_ix] == 
+                                    numpy.uint8(0)):
+                                    # if slope is too great, then set 0
+                                    slope = slopeblock.data[block_j][block_i]
+                                    if slope <= MAX_SLOPE:
+                                        # Look for downhill gradient of >= 0.1 
+                                        # for a 1 in 10 slope
+                                        new_e = demblock.data[block_j][block_i]
+                                        elevation_delta = elevation - new_e
+                                        if elevation_delta > 0:
+                                            new_x, new_y = io.block_to_pixel_coord(
+                                                block_x, block_y)
+                                            new_x += block_i
+                                            new_y += block_j
+                                            dist = numpy.sqrt(
+                                                (((x - new_x) * PIXEL_SIZE)**2) + 
+                                                (((y - new_y) * PIXEL_SIZE)**2))
+                                            gradient = (float(elevation_delta) / 
+                                                        float(dist))
+                                            if gradient >= 0.1:
+                                                outblock.data[block_j][block_i] = numpy.uint8(1)
+                                                outblock.dirty = True
+                                                origin_outblock.data[origin_block_iy][origin_block_ix]=(
+                                                    numpy.uint8(1))
+                                                origin_outblock.dirty = True
+                                                match_count += 1
+                                                # print ("Match: height difference %d, "
+                                                #        "distance %d, %d/%d" 
+                                                #        " = %.2f" % (
+                                                #         elevation_delta, dist,
+                                                #         elevation_delta, dist,
+                                                #         gradient))
+
+
+                        # Try to ensure memory is released
+                        demblock, outblock, slopeblock = None, None, None
+                        del demblock, outblock, slopeblock
+
+# write cached dirty blocks to disk
 io.write_flush()
+now = time.time()
+print "Search complete, found %d candidate pixel pairs in %.2f minutes." % (
+    match_count, (now - start_time) / 60)
+

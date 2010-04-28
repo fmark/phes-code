@@ -20,7 +20,7 @@ class MultiBandBlockIO:
         
     _block_cache = None
     bands = None
-    xsize, ysize, xblocks, yblocks = (None, None, None, None)
+    xsize, ysize, xblockcount, yblockcount, xblocksize, yblocksize = (None, None, None, None, None, None)
     verbose = False
     
     class BlockWrapper:
@@ -41,6 +41,7 @@ class MultiBandBlockIO:
         def finalise(self):
             if self.dirty:
                 self.band.WriteArray(self.data, self._xoff, self._yoff)
+                self.dirty = False
 
     @staticmethod
     def _ceil_div(numerator, denominator):
@@ -56,6 +57,8 @@ class MultiBandBlockIO:
         self.xsize = b.XSize
         self.ysize = b.YSize
         (self.xblocksize, self.yblocksize) = b.GetBlockSize()
+        self.xblockcount = self._ceil_div(self.xsize, self.xblocksize)
+        self.yblockcount = self._ceil_div(self.ysize, self.yblocksize)
         # Ensure all bands are of equal size and block size
         while True:
             i += 1
@@ -108,6 +111,8 @@ class MultiBandBlockIO:
         return (self.pixel_coord_to_block_coord(x1, y1) + 
                 self.pixel_coord_to_block_coord(x2, y2))
 
+    
+
     # adapted from http://www.python.org/download/releases/src/lib1.4.tar.gz
     # /Lib/stdwin/rect.py
     @staticmethod
@@ -143,6 +148,7 @@ class MultiBandBlockIO:
             key = (b, xoff, yoff, width, height)
             wrapped_array = self._block_cache.get(key)
             if wrapped_array is None:
+#                print "Miss"
                 wrapped_array = self.BlockWrapper(b, xoff, yoff, width, height)
                 self._block_cache.put(key, wrapped_array)
             res.append(wrapped_array)
@@ -150,4 +156,5 @@ class MultiBandBlockIO:
 
     def write_flush(self):
         self._block_cache.flush()
+
     

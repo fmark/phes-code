@@ -17,7 +17,7 @@ class LRUCache(object):
     def flush(self):
         for k in self.data:
             self.data[k][1].finalise()
-            del self.data[k]
+
 
     def clear(self):
 #        self.lock.acquire()
@@ -28,10 +28,16 @@ class LRUCache(object):
                 self.clock.append({'key':_marker, 'ref':False})
             self.maxpos = size - 1
             self.hand = 0
+            for k in self.data:
+                self.data[k][1].finalise()
+                self.data[k] = None
             self.data = {}
         finally:
 #            self.lock.release()
             pass
+
+    def __len__(self):
+        return len(self.data)
 
     def get(self, key, default=None):
         try:
