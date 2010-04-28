@@ -1,0 +1,46 @@
+INSTALING PYTHON, GDAL, PROJ AND NUMPY ON WINDOWS
+-------------------------------------------------
+
+1) Download and install python 2.6.* to c:\Python26 (the default
+   location) from http://www.python.org/download/ I used 
+   http://www.python.org/ftp/python/2.6.5/python-2.6.5.msi
+   but a newer version of python 2.6 may be available and should be
+   used.  Python 2.7 should be okay, when it is released.  Python 3.x 
+   should not be used.
+
+2) Download the GDAL binaries from
+http://download.osgeo.org/gdal/win32/1.6/gdalwin32exe160.zip and
+extract them to the c: drive, creating C:\gdalwin32-1.6 3) 
+
+3) Add the newly created bin/ directory to your system PATH 
+   (System control panel -> Advanced -> Environmental Variables), 
+   e.g. PATH=blahblah;C:\gdalwin32-1.6\bin
+
+4) Create a new environmental variable GDAL_DATA pointing to your 
+   new data/ directory, e.g. GDAL_DATA=C:\gdalwin32-1.6\data
+
+5) Install the GDAL python bindings, from 
+   http://pypi.python.org/packages/2.6/G/GDAL/GDAL-1.6.1.win32-py2.6.exe#md5=5e48c85a9ace1baad77dc26bb42ab4e1
+
+6) Download the PROJ4 binaries from 
+   http://download.osgeo.org/proj/proj446_win32_bin.zip 
+   and extract them to the c: drive, creating c:\proj
+
+7) Add the newly created bin/ directory to your system PATH 
+   (System control panel -> Advanced -> Environmental Variables), 
+   e.g. PATH=blahblah;C:\proj\bin
+
+8) Create a new environmental variable PROJ_LIB pointing to your 
+   new nad/ directory, e.g. PROJ_LIB=C:\proj\nad
+
+9) Download and install the latest version of numpy for python 2.6 from 
+   http://sourceforge.net/projects/numpy/  
+   The version I used is 
+   http://sourceforge.net/projects/numpy/files/NumPy/1.4.1rc3/numpy-1.4.1rc3-win32-superpack-python2.6.exe/download
+
+
+
+
+TO RUN:
+---------------------------------------------------------------------
+C:\GIS\phes> python analysis\find_pixel_pairs.py data\dem2_acr.img data\dem_slope_acr.img data\test4.img
