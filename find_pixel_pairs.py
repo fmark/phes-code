@@ -19,8 +19,15 @@ import time
 from utils import MultiBandBlockIO
 
 # =============================================================================
-CACHE_BLOCKS = 32000
+# Config
+CACHE_BLOCKS = 48000
 MAX_SLOPE = 1.5
+# Classes
+# TOP and BOTTOM must be perfect powers of two, e.g. 1, 2, 4, 8, 16, 32, etc.
+TOP_RESERVOIR = 1
+BOTTOM_RESERVOIR = 2
+BOTH_RESERVOIRS = TOP_RESERVOIR | BOTTOM_RESERVOIR
+NEITHER_RESERVOIR = 0
 # =============================================================================
 def Usage():
     print('Usage: find_pixel_pairs.py indem inslopeslope outfile\n')
@@ -74,15 +81,14 @@ xcellsize, ycellsize = (abs(adf[1]),
                         abs(adf[5]))
 dem_no_data = indemband.GetNoDataValue()
 slope_no_data = inslopeband.GetNoDataValue()
-out_no_data = 0
 
-outband.SetNoDataValue(out_no_data)
+outband.SetNoDataValue(NEITHER_RESERVOIR)
 
 print "Initialising empty new raster."
 # Cast to float, as band. From the docs, "The fill value is 
 # passed in as a double but this will be converted to the 
 # underlying type before writing to the file. "
-outband.Fill(float(out_no_data))
+outband.Fill(float(NEITHER_RESERVOIR))
 io = MultiBandBlockIO((indemband, inslopeband, outband), CACHE_BLOCKS, True)
 
 x_search_dist_constant = 10.0 / xcellsize
@@ -126,7 +132,6 @@ for origin_xblock in xrange(io.xblockcount):
                 # numpy arrays are accessed array[y][x]
                 elevation = origin_demblock.data[origin_block_iy][origin_block_ix]
                 origin_slope = origin_slopeblock.data[origin_block_iy][origin_block_ix]
-
                 if is_no_data(dem_no_data, elevation):
                     continue
                 if is_no_data(slope_no_data, origin_slope) or (
@@ -166,9 +171,9 @@ for origin_xblock in xrange(io.xblockcount):
                                 # For each test_pixel in the search radius:
                                 #   if output is already 1 (matched), then continue
                                 if (outblock.data[block_j][block_i] == 
-                                    numpy.uint8(0) or 
-                                    origin_outblock.data[origin_block_iy][origin_block_ix] == 
-                                    numpy.uint8(0)):
+                                    numpy.uint8(NEITHER_RESERVOIR) or 
+                                    origin_outblock.data[origin_block_iy][origin_block_ix] == (
+                                        numpy.uint8(NEITHER_RESERVOIR))):
                                     # if slope is too great, then set 0
                                     slope = slopeblock.data[block_j][block_i]
                                     if slope <= MAX_SLOPE:
@@ -187,20 +192,12 @@ for origin_xblock in xrange(io.xblockcount):
                                             gradient = (float(elevation_delta) / 
                                                         float(dist))
                                             if gradient >= 0.1:
-                                                outblock.data[block_j][block_i] = numpy.uint8(1)
+                                                outblock.data[block_j][block_i] |= numpy.uint8(BOTTOM_RESERVOIR)
                                                 outblock.dirty = True
-                                                origin_outblock.data[origin_block_iy][origin_block_ix]=(
-                                                    numpy.uint8(1))
+                                                origin_outblock.data[origin_block_iy][origin_block_ix] |= (
+                                                    numpy.uint8(TOP_RESERVOIR))
                                                 origin_outblock.dirty = True
                                                 match_count += 1
-                                                # print ("Match: height difference %d, "
-                                                #        "distance %d, %d/%d" 
-                                                #        " = %.2f" % (
-                                                #         elevation_delta, dist,
-                                                #         elevation_delta, dist,
-                                                #         gradient))
-
-
                         # Try to ensure memory is released
                         demblock, outblock, slopeblock = None, None, None
                         del demblock, outblock, slopeblock
