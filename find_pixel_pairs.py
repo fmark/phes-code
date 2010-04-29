@@ -19,10 +19,9 @@ import time
 from utils import MultiBandBlockIO
 
 # =============================================================================
-PIXEL_SIZE = 250
-DEM_NO_DATA = -3.4028235e+38
 CACHE_BLOCKS = 32000
 MAX_SLOPE = 1.5
+DEM_NO_DATA = -3.4028235e+38
 # =============================================================================
 def Usage():
     print('Usage: find_pixel_pairs.py indem inslopeslope outfile\n')
@@ -60,11 +59,19 @@ outdataset.SetGeoTransform(indemds.GetGeoTransform())
 indemband = indemds.GetRasterBand(1)
 inslopeband = inslopeds.GetRasterBand(1)
 outband = outdataset.GetRasterBand(1)
+
+# Get some stats
+adf = indemds.GetGeoTransform()
+xcellsize, ycellsize = (abs(adf[1]), 
+                        abs(adf[5]))
+
 print "Initialising empty new raster to 0."
 outband.Fill(0.0, 0.0)
-io = MultiBandBlockIO((indemband, inslopeband, outband), CACHE_BLOCKS, True)
+io = MultiBandBlockIO((indemband, inslopeband, outband), xcellsize, ycellsize, CACHE_BLOCKS, True)
 
-search_radius_constant = 10.0 / PIXEL_SIZE
+x_search_dist_constant = 10.0 / xcellsize
+y_search_dist_constant = 10.0 / ycellsize
+
 match_count = 0
 pixel_count = 0
 total_pixel_count = indemband.XSize * indemband.YSize
@@ -112,8 +119,11 @@ for origin_xblock in xrange(io.xblockcount):
                 # elevation is in meters.  We want a 1 in 10 slope, so there is no point
                 # searching farther than 10 times the elevation (unless we have
                 # land below sea level).
-                search_radius = elevation * search_radius_constant + 1
-                extent = io.search_extent(x, y, search_radius)
+                
+                x_search_dist = elevation * x_search_dist_constant + 1
+                y_search_dist = elevation * y_search_dist_constant + 1
+                extent = io.search_extent_rect(x, y, x_search_dist, y_search_dist)
+                
                 # we want to iterate over the search area one block at a time in order
                 # to minimise the amount of IO.  First we find which blocks to search:
                 block_extent = io.find_block_extent(extent)
@@ -156,8 +166,8 @@ for origin_xblock in xrange(io.xblockcount):
                                             new_x += block_i
                                             new_y += block_j
                                             dist = numpy.sqrt(
-                                                (((x - new_x) * PIXEL_SIZE)**2) + 
-                                                (((y - new_y) * PIXEL_SIZE)**2))
+                                                (((x - new_x) * xcellsize)**2) + 
+                                                (((y - new_y) * ycellsize)**2))
                                             gradient = (float(elevation_delta) / 
                                                         float(dist))
                                             if gradient >= 0.1:

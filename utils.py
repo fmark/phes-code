@@ -94,6 +94,18 @@ class MultiBandBlockIO:
         y2 = min(y + r, self.ysize)
         return (x1, y1, x2, y2)
 
+    def search_extent_rect(self, x, y, xdist, ydist):
+        def intify(r):
+            if isinstance(r, float): return int(r + 0.5)
+            else: return r
+        xdist = intify(xdist)
+        ydist = intify(ydist)
+        x1 = max(x - xdist, 0)
+        x2 = min(x + xdist, self.xsize)
+        y1 = max(y - ydist, 0)
+        y2 = min(y + ydist, self.ysize)
+        return (x1, y1, x2, y2)
+
     def pixel_coord_to_block_coord(self, x, y):
         return (x / self.xblocksize, y / self.yblocksize)
 
