@@ -169,4 +169,20 @@ class MultiBandBlockIO:
     def write_flush(self):
         self._block_cache.flush()
 
-    
+    # returns ((block1, block2, blockn, ...), block_relative_x, block_relative_y, x, y)
+    def extent_iterator(self, x1, y1, x2, y2):
+        bx, by, world_x, world_y = (None, None, None, None)
+        blocks = None
+        block_extent = io.find_block_extent(x1, y1, x2, y2)
+        for block_i in xrange(block_extent[0], block_extent[2] + 1):
+            for block_j in xrange(block_extent[1], block_extent[3] + 1):
+                blocks = self.get_block_in_bands(block_i, block_j)
+                block_xoffset, block_yoffset = self.block_to_pixel_coord(
+                    origin_xblock, origin_yblock)
+                width = min(block_xoffset + self.xblocksize, x2) - block_xoffset
+                height = min(block_yoffset + self.yblocksize, y2) - block_yoffset
+                for by in xrange(height):
+                    world_y = block_yoffset + by
+                    for bx in range(width):
+                        world_x = block_xoffset + bx
+                        yield (blocks, bx, by, world_x, world_y)
