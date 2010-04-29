@@ -181,7 +181,7 @@ for origin_xblock in xrange(io.xblockcount):
                                         # for a 1 in 10 slope
                                         new_e = demblock.data[block_j][block_i]
                                         elevation_delta = elevation - new_e
-                                        if elevation_delta > 0:
+                                        if elevation_delta > 100:
                                             new_x, new_y = io.block_to_pixel_coord(
                                                 block_x, block_y)
                                             new_x += block_i
