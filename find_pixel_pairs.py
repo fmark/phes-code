@@ -99,17 +99,8 @@ pixel_count = 0
 total_pixel_count = indemband.XSize * indemband.YSize
 locale.setlocale(locale.LC_ALL, "")
 start_time = time.time()
-for origin_xblock in xrange(io.xblockcount):
-    for origin_yblock in xrange(io.yblockcount):
-        origin_demblock, origin_slopeblock, origin_outblock = (
-                    io.get_block_in_bands(origin_xblock, origin_yblock))
-        origin_pixel_xoffset, origin_pixel_yoffset = io.block_to_pixel_coord(
-            origin_xblock, origin_yblock)
-        for origin_block_iy in xrange(origin_demblock._height):
-            #find "global" pixel x,y coordinate
-            y = origin_block_iy + origin_pixel_yoffset
-            for origin_block_ix in xrange(origin_demblock._width):
-                x = origin_block_ix + origin_pixel_xoffset
+for (origin_demblock, origin_slopeblock, origin_outblock), origin_block_ix, origin_block_iy, x, y in ( 
+    io.extent_iterator(0, 0, indemband.XSize, indemband.YSize)):
 
                 # progress bar related stuff
                 pixel_count += 1
