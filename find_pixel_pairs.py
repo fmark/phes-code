@@ -21,7 +21,6 @@ from utils import MultiBandBlockIO
 # =============================================================================
 CACHE_BLOCKS = 32000
 MAX_SLOPE = 1.5
-DEM_NO_DATA = -3.4028235e+38
 # =============================================================================
 def Usage():
     print('Usage: find_pixel_pairs.py indem inslopeslope outfile\n')
@@ -29,6 +28,15 @@ def Usage():
 
 # =============================================================================
 
+def is_no_data(nd, val):
+    if isinstance(nd, float):
+        return nd == float(val)
+    if isinstance(nd, int):
+        return nd == int(val)
+    print("Unsupported no data type, %s of %s" % (
+            str(nd), str(type(nd))))
+    sys.exit(1)
+       
 
 # Parse command line arguments.
 if len(sys.argv) != 4:
@@ -64,10 +72,18 @@ outband = outdataset.GetRasterBand(1)
 adf = indemds.GetGeoTransform()
 xcellsize, ycellsize = (abs(adf[1]), 
                         abs(adf[5]))
+dem_no_data = indemband.GetNoDataValue()
+slope_no_data = inslopeband.GetNoDataValue()
+out_no_data = 0
 
-print "Initialising empty new raster to 0."
-outband.Fill(0.0, 0.0)
-io = MultiBandBlockIO((indemband, inslopeband, outband), xcellsize, ycellsize, CACHE_BLOCKS, True)
+outband.SetNoDataValue(out_no_data)
+
+print "Initialising empty new raster."
+# Cast to float, as band. From the docs, "The fill value is 
+# passed in as a double but this will be converted to the 
+# underlying type before writing to the file. "
+outband.Fill(float(out_no_data))
+io = MultiBandBlockIO((indemband, inslopeband, outband), CACHE_BLOCKS, True)
 
 x_search_dist_constant = 10.0 / xcellsize
 y_search_dist_constant = 10.0 / ycellsize
@@ -111,10 +127,10 @@ for origin_xblock in xrange(io.xblockcount):
                 elevation = origin_demblock.data[origin_block_iy][origin_block_ix]
                 origin_slope = origin_slopeblock.data[origin_block_iy][origin_block_ix]
 
-                if elevation == numpy.float32(DEM_NO_DATA):
+                if is_no_data(dem_no_data, elevation):
                     continue
-                if (origin_slope == numpy.float32(DEM_NO_DATA) or
-                    origin_slope > numpy.float32(MAX_SLOPE)):
+                if is_no_data(slope_no_data, origin_slope) or (
+                    float(origin_slope) > MAX_SLOPE):
                     continue
                 # elevation is in meters.  We want a 1 in 10 slope, so there is no point
                 # searching farther than 10 times the elevation (unless we have
