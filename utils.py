@@ -13,6 +13,14 @@ except ImportError:
 
 from lrucache import LRUCache
 
+def ceil_div(numerator, denominator):
+    return (numerator + denominator - 1) // denominator
+
+def get_cellsize(dataset):
+    adf = dataset.GetGeoTransform()
+    return (abs(adf[1]), abs(adf[5]))
+
+
 class UnequalBandException(Exception):
     pass
 
@@ -43,9 +51,6 @@ class MultiBandBlockIO:
                 self.band.WriteArray(self.data, self._xoff, self._yoff)
                 self.dirty = False
 
-    @staticmethod
-    def _ceil_div(numerator, denominator):
-        return (numerator + denominator - 1) / denominator
 
     def __init__(self, bands, cache_size=24000, verbose=False):
         self._block_cache = LRUCache(cache_size)
@@ -57,8 +62,8 @@ class MultiBandBlockIO:
         self.xsize = b.XSize
         self.ysize = b.YSize
         (self.xblocksize, self.yblocksize) = b.GetBlockSize()
-        self.xblockcount = self._ceil_div(self.xsize, self.xblocksize)
-        self.yblockcount = self._ceil_div(self.ysize, self.yblocksize)
+        self.xblockcount = ceil_div(self.xsize, self.xblocksize)
+        self.yblockcount = ceil_div(self.ysize, self.yblocksize)
         # Ensure all bands are of equal size and block size
         while True:
             i += 1
@@ -81,8 +86,8 @@ class MultiBandBlockIO:
                    (self.xsize * self.ysize, 
                     self.xsize, self.ysize, 
                     self.xblocksize, self.yblocksize,
-                    self._ceil_div(self.xsize, self.xblocksize), 
-                    self._ceil_div(self.ysize, self.yblocksize),
+                    ceil_div(self.xsize, self.xblocksize), 
+                    ceil_div(self.ysize, self.yblocksize),
                     cache_size))
 
     def search_extent(self, x, y, r):
@@ -162,13 +167,28 @@ class MultiBandBlockIO:
             key = (b, xoff, yoff, width, height)
             block = self._block_cache.get(key)
             if block is None:
-                print "miss"
+#                print "miss"
                 block = self.BlockWrapper(b, xoff, yoff, width, height)
                 if putcache:
                     self._block_cache.put(key, block)
             res.append(block.data[block_y][block_x])
         return tuple(res)
 
+    def set_pixel(self, band, (px, py), value):
+        # calculate block key
+        xoff = (px // self.xblocksize) * self.xblocksize
+        yoff = (py // self.yblocksize) * self.yblocksize
+        width = min(self.xblocksize + xoff, self.xsize) - xoff
+        height = min(self.yblocksize + yoff, self.ysize) - yoff
+        block_x = px - xoff
+        block_y = py - yoff
+        key = (band, xoff, yoff, width, height)
+        block = self._block_cache.get(key)
+        if block is None:
+#           print "miss"
+            block = self.BlockWrapper(band, xoff, yoff, width, height)
+        block.data[block_y][block_x] = value
+        block.dirty = True
 
     def get_block_in_bands(self, block_x, block_y):
         res = []
