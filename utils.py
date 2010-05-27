@@ -107,7 +107,7 @@ class MultiBandBlockIO:
         return (x1, y1, x2, y2)
 
     def pixel_coord_to_block_coord(self, x, y):
-        return (x / self.xblocksize, y / self.yblocksize)
+        return (x // self.xblocksize, y // self.yblocksize)
 
     def block_to_pixel_coord(self, block_x, block_y):
         return (block_x * self.xblocksize, 
@@ -148,6 +148,27 @@ class MultiBandBlockIO:
                 if is_empty(((left, top, right, bottom))):
                         return empty
         return (left, top, right, bottom)
+
+    def get_pixel(self, (px, py), putcache=True):
+        res = []
+        # calculate block key
+        xoff = (px // self.xblocksize) * self.xblocksize
+        yoff = (py // self.yblocksize) * self.yblocksize
+        width = min(self.xblocksize + xoff, self.xsize) - xoff
+        height = min(self.yblocksize + yoff, self.ysize) - yoff
+        block_x = px - xoff
+        block_y = py - yoff
+        for b in self.bands:
+            key = (b, xoff, yoff, width, height)
+            block = self._block_cache.get(key)
+            if block is None:
+                print "miss"
+                block = self.BlockWrapper(b, xoff, yoff, width, height)
+                if putcache:
+                    self._block_cache.put(key, block)
+            res.append(block.data[block_y][block_x])
+        return tuple(res)
+
 
     def get_block_in_bands(self, block_x, block_y):
         res = []
