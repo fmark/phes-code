@@ -209,6 +209,9 @@ class MultiBandBlockIO:
 
     def write_flush(self):
         self._block_cache.flush()
+        for b in self.bands:
+            b.FlushCache()
+            
 
     # returns ((block1, block2, blockn, ...), block_relative_x, block_relative_y, x, y)
     def extent_iterator(self, x1, y1, x2, y2):
