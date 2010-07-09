@@ -17,6 +17,7 @@ from blist import sortedlist
 CACHE_BLOCKS = 48000
 DEFAULT_MAX_HEIGHT_DIFF   = 6.4
 DEFAULT_MIN_POND_SIZE_SQM = 32400
+MAX_POND_SIZE = 5500
 
 POND_NO_DATA = 0
 # =============================================================================
@@ -112,7 +113,11 @@ class PondBuilder():
 
 
     def __init__(self):
-        self.parse_args()
+        try:
+            self.parse_args()
+        except:
+            print "Could not open all files.  Aborting."
+            sys.exit(1)
 
     def prepare_no_data(self):
         self.dem_no_data = self.indemband.GetNoDataValue()
@@ -127,12 +132,17 @@ class PondBuilder():
         self.outband.Fill(float(POND_NO_DATA))
 
     # we can skip a pixel if it's not in a pair (not useful)
-    # or it has already been assigned to a pond
-    def can_skip_pixel(self, pairblock, outblock, block_x, block_y):
+    # or it has already been assigned to a pond,
+    # or it has no elevation data
+    def can_skip_pixel(self, demblock, pairblock, outblock, block_x, block_y):
         # numpy arrays are accessed array[y][x]
         pair_val = pairblock.data[block_y][block_x]
         # skip empty pixel pairs
         if is_no_data(self.pxpairs_no_data, pair_val):
+            return True
+        dem_val = demblock.data[block_y][block_x]
+        # skip empty pixel pairs
+        if is_no_data(self.dem_no_data, dem_val):
             return True
         out_val = outblock.data[block_y][block_x]
         # if the pixel has been assigned to a pond already, skip it
@@ -198,9 +208,10 @@ class PondBuilder():
         self.world_extent = (0, 0, self.indemband.XSize, self.indemband.YSize)
         self.pond_num = POND_NO_DATA + 1
         self.pond_attributes = {}
+        pixel_check_count = 0
         for (demblock, pxpairsblock, outblock), block_x, block_y, world_x, world_y in ( 
             self.io.extent_iterator(*self.world_extent)):
-            if self.can_skip_pixel(pxpairsblock, outblock, block_x, block_y):
+            if self.can_skip_pixel(demblock, pxpairsblock, outblock, block_x, block_y):
                 continue
             elevation = demblock.data[block_y][block_x]    
             new_pixel = (world_x, world_y)
@@ -227,8 +238,8 @@ class PondBuilder():
                         pond_pixels.has_key(f)):
                         continue
                     f_demval, f_pairval, f_outval = self.io.get_pixel(f)
-                    # if its not in a pair, skip it
-                    if is_no_data(self.pxpairs_no_data, f_pairval):
+                    # if it doesn't have an elevation value, skip it
+                    if is_no_data(self.dem_no_data, f_demval):
                         bad_fringe.add(f)
                         continue
                     # if pixel is already in a pond, skip it
@@ -252,7 +263,6 @@ class PondBuilder():
                 new_pixel, new_elevation = closest_fringe.pop()
                 fringe_pixels.remove(new_pixel)
                 # if the closest pixel is too far away, then we are done
-                diff = new_elevation - pond_mean_elevation
                 # now recalculate pond statistics
                 pond_size += 1
                 pond_sum_elevation += new_elevation
@@ -260,15 +270,22 @@ class PondBuilder():
                 pond_pixels[new_pixel] = new_elevation
                 # calculate total pond earth to move
                 old_mean_diff = mean_diff
-                total_diff = sum(map(lambda x: abs(x - pond_mean_elevation), pond_pixels.values()))
+                # do we want gross mean diff or net mean diff
+                # net mean diff means that any cutting and filling can be combined
+                # gross:
+                total_diff = sum([abs(x - pond_mean_elevation) for x in pond_pixels.values()])
+                #net
+                # total_diff = abs(sum(map(lambda x: x - pond_mean_elevation, pond_pixels.values())))
                 mean_diff = total_diff / pond_size
-                # If 
-                if mean_diff > self.max_height_diff:
+                # If the closest pond isn't close enough
+                if mean_diff > self.max_height_diff or pond_size > MAX_POND_SIZE:
                     del pond_pixels[new_pixel]
                     mean_diff = old_mean_diff
+                    pond_size -= 1
+                    pond_sum_elevation -= new_elevation
+                    pond_mean_elevation = float(pond_sum_elevation) / pond_size
                     break
                 repartition_lists(lower_fringe, upper_fringe, pond_mean_elevation)
-
             if pond_size >= self.min_pond_pixels:
 #                print "Found pond %d, %d pixels" % (self.pond_num, pond_size)        
                 #save the found pond to buffer
@@ -278,7 +295,15 @@ class PondBuilder():
                 self.pond_attributes[self.pond_num] = (pond_m2,
                                                   pond_mean_elevation,
                                                   total_diff * pond_m2)
+                print "Found pond %d, %d pixels (%.2f m sq.), mean elevation %.2f, total_earth_to_move %.2f" % (self.pond_num, pond_size, pond_m2,
+                                                  pond_mean_elevation,
+                                                  total_diff * pond_m2)
+                self.io.write_flush() 
                 self.pond_num += 1
+            pixel_check_count += 1
+            period = int(self.total_pixel_count / 100)
+            if self.total_pixel_count % pixel_check_count == period:
+                print "Completed %.2f%%" % (float(self.total_pixel_count) / pixel_check_count * 100)
             # end of for loop.  Following code is kept for reference
             continue
 
