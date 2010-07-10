@@ -8,8 +8,10 @@ import locale
 import time
 import os.path
 from itertools import product
-from utils import *
+from collections import namedtuple
 from blist import sortedlist
+from utils import *
+
 
 
 # =============================================================================
@@ -59,12 +61,13 @@ def repartition_lists(lower, upper, pivot):
     while (len(upper) > 0) and (upper[0][1] < pivot):
         lower.add(upper.pop())
 
+Pixel = namedtuple('Pixel', 'x y elevation n_neighbours is_site')
 
 class Fringe(object):
     def __init__(self, initial_elevation, pond, favour_neighbours=True):
         self.mean_elevation = initial_elevation
-        self._lower_fringe = sortedlist(key=(lambda x: -1 * x[1]))
-        self._upper_fringe = sortedlist(key=(lambda x: x[1]))
+        self._lower_fringe = sortedlist(key=(lambda x: -1 * x.elevation))
+        self._upper_fringe = sortedlist(key=(lambda x: x.elevation))
         self._fringe_pixels = set()
         self._bad_fringe = set()
         self._pond = pond
@@ -79,9 +82,9 @@ class Fringe(object):
     def add(self, pixel, elevation):
         self._fringe_pixels.add(pixel)
         if elevation > self.mean_elevation:
-            self._upper_fringe.add((pixel, elevation))
+            self._upper_fringe.add(Pixel(pixel[0], pixel[1], elevation, 0, False))
         else:
-            self._lower_fringe.add((pixel, elevation))
+            self._lower_fringe.add(Pixel(pixel[0], pixel[1], elevation, 0, False))
 
     def __iter__(self):
         return self
@@ -90,13 +93,14 @@ class Fringe(object):
         
         closest = self._find_closest_list_head(
                     [self._upper_fringe, self._lower_fringe],
-                    (lambda x: x[0][1]), 
+                    (lambda x: x[0].elevation), 
                     self.mean_elevation)
         if closest is None:
             raise StopIteration
         else:
-            self._fringe_pixels.remove(closest[0][0])
-            return closest.pop()
+            self._fringe_pixels.remove((closest[0].x, closest[0].y))
+            c = closest.pop()
+            return (c.x, c.y), c.elevation
 
     def update_mean(self, new_mean):
         self.mean_elevation = new_mean

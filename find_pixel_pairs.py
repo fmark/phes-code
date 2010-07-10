@@ -17,7 +17,6 @@ import sys
 import locale
 import time
 from utils import MultiBandBlockIO
-from collections import namedtuple
 
 # =============================================================================
 # Config
