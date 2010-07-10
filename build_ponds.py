@@ -39,8 +39,13 @@ def is_no_data(nd, val):
     sys.exit(1)
 
 # Find all 8 neighbours 
-def fringe8((px, py), extent=None):
-    nonzero = (pair for pair in product((-1,0,1),(-1,0,1)) if pair != (0, 0))
+def neighbouring_pixels((px, py), n=8, extent=None):
+    if n == 8:
+        nonzero = (pair for pair in product((-1,0,1),(-1,0,1)) if pair != (0, 0))
+    elif n == 4:
+        nonzero = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+    else:
+        raise ValueError("Can only get 8 or 4 neighbours.")
     f = ((px+dx, py+dy) for (dx,dy) in nonzero)
     if extent is None:
         return f
@@ -55,21 +60,62 @@ def repartition_lists(lower, upper, pivot):
         lower.add(upper.pop())
 
 
-def find_closest_list_head(lists, val_func, compare_val):
-    closest = None
-    closest_diff = float("inf")
-    for list in lists:
-        try:
-            diff = abs(val_func(list) - compare_val)
-#            print diff
-            if diff < closest_diff:
-                closest = list
-                closest_diff = diff
-        except IndexError:
-            continue
-    return closest
+class Fringe(object):
+    def __init__(self, initial_elevation, pond, favour_neighbours=True):
+        self.mean_elevation = initial_elevation
+        self._lower_fringe = sortedlist(key=(lambda x: -1 * x[1]))
+        self._upper_fringe = sortedlist(key=(lambda x: x[1]))
+        self._fringe_pixels = set()
+        self._bad_fringe = set()
+        self._pond = pond
+        self._favour_neighbour = favour_neighbours
+        
+    def __contains__(self, pixel):
+        return pixel in self._fringe_pixels or pixel in self._bad_fringe
 
-class PondBuilder():
+    def add_bad(self, pixel):
+        self._bad_fringe.add(pixel)
+
+    def add(self, pixel, elevation):
+        self._fringe_pixels.add(pixel)
+        if elevation > self.mean_elevation:
+            self._upper_fringe.add((pixel, elevation))
+        else:
+            self._lower_fringe.add((pixel, elevation))
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        
+        closest = self._find_closest_list_head(
+                    [self._upper_fringe, self._lower_fringe],
+                    (lambda x: x[0][1]), 
+                    self.mean_elevation)
+        if closest is None:
+            raise StopIteration
+        else:
+            self._fringe_pixels.remove(closest[0][0])
+            return closest.pop()
+
+    def update_mean(self, new_mean):
+        self.mean_elevation = new_mean
+        repartition_lists(self._lower_fringe, self._upper_fringe, self.mean_elevation)
+
+    def _find_closest_list_head(self, lists, val_func, compare_val):
+        closest = None
+        closest_diff = float("inf")
+        for list in lists:
+            try:
+                diff = abs(val_func(list) - compare_val)
+                if diff < closest_diff:
+                    closest = list
+                    closest_diff = diff
+            except IndexError:
+                continue
+            return closest
+
+class PondBuilder(object):
     def parse_args(self):
         self.indem = sys.argv[1]
         self.inpxpairs = sys.argv[2]
@@ -223,45 +269,33 @@ class PondBuilder():
             pond_mean_elevation = elevation
             pond_sum_elevation = elevation
         #    print "Added pixel 1, elevation %f." % pond_sum_elevation
-            lower_fringe = sortedlist(key=(lambda x: -1 * x[1]))
-            upper_fringe = sortedlist(key=(lambda x: x[1]))
-            fringe_pixels = set()
-            bad_fringe = set()
+            fringe = Fringe(elevation, pond_pixels)
             # there is no do while, so we'll manually break out of the loop
         #    print "New pond, number %4d" % pond_num
             while True: 
                 # add surrounding 8 pixels to the fringe if valid
-                for f in fringe8(new_pixel, self.world_extent):
+                for f in neighbouring_pixels(new_pixel, 4, self.world_extent):
                     # screen out any pixels we don't want in the fringe
-                    if (f in fringe_pixels or 
-                        f in bad_fringe or 
-                        pond_pixels.has_key(f)):
+                    if (f in fringe or 
+                        f in pond_pixels):
                         continue
                     f_demval, f_pairval, f_outval = self.io.get_pixel(f)
                     # if it doesn't have an elevation value, skip it
                     if is_no_data(self.dem_no_data, f_demval):
-                        bad_fringe.add(f)
+                        fringe.add_bad(f)
                         continue
                     # if pixel is already in a pond, skip it
                     if not is_no_data(POND_NO_DATA, f_outval):
-                        bad_fringe.add(f)
+                        fringe.add_bad(f)
                         continue
                     # add valid pixel to fringe
-                    fringe_pixels.add(f)
-                    if f_demval > pond_mean_elevation:
-                        upper_fringe.add((f, f_demval))
-                    else:
-                        lower_fringe.add((f, f_demval))
-                closest_fringe = find_closest_list_head(
-                    [upper_fringe, lower_fringe],
-                    (lambda x: x[0][1]), 
-                    pond_mean_elevation)
-
+                    fringe.add(f, f_demval)
+                    
                 # if the fringes are empty, then we have finished this pond
-                if closest_fringe is None:
+                try:
+                    new_pixel, new_elevation = fringe.next()
+                except StopIteration:
                     break
-                new_pixel, new_elevation = closest_fringe.pop()
-                fringe_pixels.remove(new_pixel)
                 # if the closest pixel is too far away, then we are done
                 # now recalculate pond statistics
                 pond_size += 1
@@ -278,14 +312,15 @@ class PondBuilder():
                 # total_diff = abs(sum(map(lambda x: x - pond_mean_elevation, pond_pixels.values())))
                 mean_diff = total_diff / pond_size
                 # If the closest pond isn't close enough
-                if mean_diff > self.max_height_diff or pond_size > MAX_POND_SIZE:
+                if mean_diff > self.max_height_diff:
                     del pond_pixels[new_pixel]
                     mean_diff = old_mean_diff
                     pond_size -= 1
                     pond_sum_elevation -= new_elevation
                     pond_mean_elevation = float(pond_sum_elevation) / pond_size
                     break
-                repartition_lists(lower_fringe, upper_fringe, pond_mean_elevation)
+                fringe.update_mean(pond_mean_elevation)
+
             if pond_size >= self.min_pond_pixels:
 #                print "Found pond %d, %d pixels" % (self.pond_num, pond_size)        
                 #save the found pond to buffer

@@ -17,6 +17,7 @@ import sys
 import locale
 import time
 from utils import MultiBandBlockIO
+from collections import namedtuple
 
 # =============================================================================
 # Config
@@ -32,7 +33,6 @@ NEITHER_RESERVOIR = 0
 def Usage():
     print('Usage: find_pixel_pairs.py indem inslopeslope outfile\n')
     sys.exit( 1 )
-
 # =============================================================================
 
 def is_no_data(nd, val):
