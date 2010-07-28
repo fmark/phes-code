@@ -164,11 +164,40 @@ class Fringe(object):
                 repartition_lists(lower, upper, self.mean_elevation)
 
     def _find_next_fringe(self):
-        PREFER_SITES = True
-        PREFER_NNEIGH = True
+        PREFER_SITES = False
+        PREFER_NNEIGH = False
         
         if PREFER_SITES and PREFER_NNEIGH:
-            groups = [[self._upper_fringe[site][n], self._lower_fringe[site][n]] for site, n in product([True, False], range(8, -1, -1))]            
+            groups = ([
+                    self._upper_fringe[site][n], 
+                    self._lower_fringe[site][n]] 
+                      for site, n in 
+                      product([True, False], xrange(8, -1, -1)))
+        elif PREFER_SITES and not PREFER_NNEIGH:
+            def f():
+                for b in [True, False]:
+                    yield  [f[b][i] for i, f, b in 
+                            product(xrange(8, -1, -1), 
+                                    [self._lower_fringe, self._upper_fringe], 
+                                    [b])]
+            groups = f()
+        elif (not PREFER_SITES) and PREFER_NNEIGH:
+            groups = ([self._lower_fringe[True][i], 
+                       self._lower_fringe[False][i],
+                       self._upper_fringe[True][i], 
+                       self._upper_fringe[False][i]] 
+                      for i in xrange(8, -1, -1))
+        else:
+            assert (not PREFER_SITES) and (not PREFER_NNEIGH)
+            def f():
+                yield [f[b][i] 
+                       for f, i, b in 
+                       product([self._lower_fringe, self._upper_fringe],
+                               range(8, -1, -1), 
+                               [True, False])]
+
+            groups = f()
+    
         for group in groups:
             closest = self._find_closest_list_head(
                 group,
