@@ -164,10 +164,14 @@ class Fringe(object):
                 repartition_lists(lower, upper, self.mean_elevation)
 
     def _find_next_fringe(self):
-        for site, n in product([True, False], range(8, -1, -1)):
+        PREFER_SITES = True
+        PREFER_NNEIGH = True
+        
+        if PREFER_SITES and PREFER_NNEIGH:
+            groups = [[self._upper_fringe[site][n], self._lower_fringe[site][n]] for site, n in product([True, False], range(8, -1, -1))]            
+        for group in groups:
             closest = self._find_closest_list_head(
-                [self._upper_fringe[site][n], 
-                 self._lower_fringe[site][n]],
+                group,
                 (lambda x: x[0].elevation), 
                 self.mean_elevation)
             if not closest is None:
