@@ -19,8 +19,7 @@ from utils import *
 CACHE_BLOCKS = 48000
 DEFAULT_MAX_HEIGHT_DIFF   = 6.4
 DEFAULT_MIN_POND_SIZE_SQM = 32400
-MAX_POND_SIZE = 5500
-
+#MAX_POND_SIZE = 5500
 POND_NO_DATA = 0
 # =============================================================================
 def Usage():
@@ -40,7 +39,7 @@ def is_no_data(nd, val):
             str(nd), str(type(nd))))
     sys.exit(1)
 
-# Find all 8 neighbours 
+# Find all neighbours 
 def neighbouring_pixels((px, py), n=8, extent=None):
     if n == 8:
         nonzero = (pair for pair in product((-1,0,1),(-1,0,1)) if pair != (0, 0))
@@ -56,22 +55,27 @@ def neighbouring_pixels((px, py), n=8, extent=None):
 
 #repartition already partitioned, sorted lists when the pivot has changed
 def repartition_lists(lower, upper, pivot):
-    while len(lower) > 0 and lower[0][1] > pivot: 
+    while len(lower) > 0 and lower[0].elevation > pivot: 
         upper.add(lower.pop())
-    while (len(upper) > 0) and (upper[0][1] < pivot):
+    while (len(upper) > 0) and (upper[0].elevation < pivot):
         lower.add(upper.pop())
 
-Pixel = namedtuple('Pixel', 'x y elevation n_neighbours is_site')
+class Pixel(namedtuple('Pixel_', 'x y elevation n_neighbours is_site')):
+    is_upper = True
 
 class Fringe(object):
-    def __init__(self, initial_elevation, pond, favour_neighbours=True):
+    def __init__(self, initial_elevation, pond):
         self.mean_elevation = initial_elevation
-        self._lower_fringe = sortedlist(key=(lambda x: -1 * x.elevation))
-        self._upper_fringe = sortedlist(key=(lambda x: x.elevation))
-        self._fringe_pixels = set()
+        # contains Pixel objects in cascaded data structure:
+        # lower_fringe[True/False] sets whether or not the pixel is a site
+        # lower_fringe[x][0..8] is a count of the pixels num neighbours
+        self._lower_fringe = [9 * [sortedlist(key=(lambda x: -1 * x.elevation))]] * 2
+        self._upper_fringe = [9 * [sortedlist(key=(lambda x: x.elevation))]] * 2
+        # contain (x, y) tuples
+        self._fringe_pixels = {}
+        # contain (x, y) tuples
         self._bad_fringe = set()
         self._pond = pond
-        self._favour_neighbour = favour_neighbours
         
     def __contains__(self, pixel):
         return pixel in self._fringe_pixels or pixel in self._bad_fringe
@@ -79,32 +83,97 @@ class Fringe(object):
     def add_bad(self, pixel):
         self._bad_fringe.add(pixel)
 
-    def add(self, pixel, elevation):
-        self._fringe_pixels.add(pixel)
+    def add(self, pixel, elevation, is_site):
+        if pixel in self._fringe_pixels:
+            raise ValueError("Adding pixel %s that is already in fringe." %
+                             str(pixel))
+        pond_neighbours = set(neighbouring_pixels(pixel, 8)) & set(
+            self._pond)
+        pond_neighbour_count = len(pond_neighbours)
+        assert (0 <= pond_neighbour_count < 9)
+        p = Pixel(pixel[0], pixel[1], elevation, pond_neighbour_count, is_site)
+        self._fringe_pixels[pixel] = p
+
         if elevation > self.mean_elevation:
-            self._upper_fringe.add(Pixel(pixel[0], pixel[1], elevation, 0, False))
+            self._upper_fringe[is_site][pond_neighbour_count].add(p)
         else:
-            self._lower_fringe.add(Pixel(pixel[0], pixel[1], elevation, 0, False))
+            self._lower_fringe[is_site][pond_neighbour_count].add(p)
+
+    def _inc_neighbour_count(self, pixel):
+        #immutable, so create new object
+        if pixel[0] == 16 and pixel[1] == 254 and False:
+            print "test"
+            t = True
+        else:
+            t = False
+        old_pixel = self._fringe_pixels[pixel]
+        new_pixel = Pixel(old_pixel.x, 
+                          old_pixel.y,
+                          old_pixel.elevation,
+                          old_pixel.n_neighbours + 1,
+                          old_pixel.is_site)
+        
+        if old_pixel.elevation > self.mean_elevation:
+            fringe = self._upper_fringe
+        else:
+            fringe = self._lower_fringe
+        # move neighbour buckets
+        #print old_pixel
+        if t:
+            #print "before: %s" % fringe
+            print "[%s][%s] -> [%s][%s]" % (old_pixel.is_site, 
+                                            old_pixel.n_neighbours,
+                                            new_pixel.is_site,
+                                            new_pixel.n_neighbours)
+            print "In lower: %s, upper: %s" % (old_pixel in self._lower_fringe[old_pixel.is_site][old_pixel.n_neighbours],
+                                               old_pixel in self._upper_fringe[old_pixel.is_site][old_pixel.n_neighbours])
+            print old_pixel.elevation, self.mean_elevation
+        fringe[old_pixel.is_site][old_pixel.n_neighbours].remove(old_pixel)
+        fringe[new_pixel.is_site][new_pixel.n_neighbours].add(new_pixel)
+        if t:
+            #print "after: %s" % fringe
+            pass
+
+        self._fringe_pixels[pixel] = new_pixel
 
     def __iter__(self):
         return self
 
     def next(self):
-        
-        closest = self._find_closest_list_head(
-                    [self._upper_fringe, self._lower_fringe],
-                    (lambda x: x[0].elevation), 
-                    self.mean_elevation)
+        closest = self._find_next_fringe()
         if closest is None:
             raise StopIteration
         else:
-            self._fringe_pixels.remove((closest[0].x, closest[0].y))
             c = closest.pop()
+            p = (c.x, c.y)
+            del self._fringe_pixels[p]
+            # update the fringe that one of there number has joined the pond
+            fringe_neighbours = set(neighbouring_pixels(p, 8)) & set(
+                self._fringe_pixels)
+#            print "Incing: %s for %s" % (str(fringe_neighbours), p)
+            for pixel in fringe_neighbours:
+                self._inc_neighbour_count(pixel)
+
             return (c.x, c.y), c.elevation
 
     def update_mean(self, new_mean):
         self.mean_elevation = new_mean
-        repartition_lists(self._lower_fringe, self._upper_fringe, self.mean_elevation)
+        for site, i in product([True, False], range(8, -1, -1)):
+                lower = self._lower_fringe[site][i]
+                upper = self._upper_fringe[site][i]
+                repartition_lists(lower, upper, self.mean_elevation)
+
+    def _find_next_fringe(self):
+        for site, n in product([True, False], range(8, -1, -1)):
+            closest = self._find_closest_list_head(
+                [self._upper_fringe[site][n], 
+                 self._lower_fringe[site][n]],
+                (lambda x: x[0].elevation), 
+                self.mean_elevation)
+            if not closest is None:
+                return closest
+
+        return None
 
     def _find_closest_list_head(self, lists, val_func, compare_val):
         closest = None
@@ -293,7 +362,8 @@ class PondBuilder(object):
                         fringe.add_bad(f)
                         continue
                     # add valid pixel to fringe
-                    fringe.add(f, f_demval)
+                    is_site = not is_no_data(self.pxpairs_no_data, f_pairval)
+                    fringe.add(f, f_demval, is_site)
                     
                 # if the fringes are empty, then we have finished this pond
                 try:
@@ -364,9 +434,10 @@ class PondBuilder(object):
         print "Total build time %.2f mintutes." % (
             (now - start_time) / 60)
 
-# Parse command line arguments.
-if not (4 < len(sys.argv) < 8):
-    Usage()
-else:
-    bp = PondBuilder()
-    bp.main()
+if __name__ == '__main__':
+    # Parse command line arguments.
+    if not (4 < len(sys.argv) < 8):
+        Usage()
+    else:
+        bp = PondBuilder()
+        bp.main()
