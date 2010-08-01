@@ -17,12 +17,12 @@ from utils import *
 # =============================================================================
 # Config
 CACHE_BLOCKS = 48000
-DEFAULT_MAX_HEIGHT_DIFF   = 6.4 #was 6.4
+DEFAULT_MAX_HEIGHT_DIFF   = 3.2 #was 6.4
 DEFAULT_MIN_POND_SIZE_SQM = 32400
 #MAX_POND_SIZE = 5500
 POND_NO_DATA = 0
-PREFER_SITES = False
-PREFER_NNEIGH = False
+PREFER_SITES = True
+PREFER_NNEIGH = True
 
 # =============================================================================
 def Usage():
@@ -58,10 +58,13 @@ def neighbouring_pixels((px, py), n=8, extent=None):
 
 #repartition already partitioned, sorted lists when the pivot has changed
 def repartition_lists(lower, upper, pivot):
-    while len(lower) > 0 and lower[0].elevation > pivot: 
-        upper.add(lower.pop())
+    while (len(lower) > 0) and (lower[0].elevation > pivot):
+#        if lower[0].x == 17 and lower[0].y == 252:
+#            print lower
+#            print "MOVE", pivot, lower[0]
+        upper.add(lower.pop(0))
     while (len(upper) > 0) and (upper[0].elevation < pivot):
-        lower.add(upper.pop())
+        lower.add(upper.pop(0))
 
 class Pixel(namedtuple('Pixel_', 'x y elevation n_neighbours is_site')):
     is_upper = True
@@ -104,9 +107,10 @@ class Fringe(object):
 
     def _inc_neighbour_count(self, pixel):
         #immutable, so create new object
-        if pixel[0] == 16 and pixel[1] == 254 and False:
-            print "test"
+        if False and pixel[0] == 17 and pixel[1] == 252:
             t = True
+            print " *** " , self._fringe_pixels[pixel]
+            print self.mean_elevation
         else:
             t = False
         old_pixel = self._fringe_pixels[pixel]
@@ -130,11 +134,13 @@ class Fringe(object):
                                             new_pixel.n_neighbours)
             print "In lower: %s, upper: %s" % (old_pixel in self._lower_fringe[old_pixel.is_site][old_pixel.n_neighbours],
                                                old_pixel in self._upper_fringe[old_pixel.is_site][old_pixel.n_neighbours])
-            print old_pixel.elevation, self.mean_elevation
+
         fringe[old_pixel.is_site][old_pixel.n_neighbours].remove(old_pixel)
         fringe[new_pixel.is_site][new_pixel.n_neighbours].add(new_pixel)
         if t:
             #print "after: %s" % fringe
+            #print "In lower: %s, upper: %s" % (new_pixel in self._lower_fringe[new_pixel.is_site][new_pixel.n_neighbours],
+            # new_pixel in self._upper_fringe[new_pixel.is_site][new_pixel.n_neighbours])
             pass
 
         self._fringe_pixels[pixel] = new_pixel
@@ -147,7 +153,7 @@ class Fringe(object):
         if closest is None:
             raise StopIteration
         else:
-            c = closest.pop()
+            c = closest.pop(0)
             p = (c.x, c.y)
             del self._fringe_pixels[p]
             # update the fringe that one of there number has joined the pond
@@ -166,6 +172,7 @@ class Fringe(object):
 
     def update_mean(self, new_mean):
         self.mean_elevation = new_mean
+#        print "new mean: ", new_mean
         for site, i in product([True, False], range(8, -1, -1)):
                 lower = self._lower_fringe[site][i]
                 upper = self._upper_fringe[site][i]
