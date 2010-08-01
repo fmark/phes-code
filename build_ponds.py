@@ -17,10 +17,13 @@ from utils import *
 # =============================================================================
 # Config
 CACHE_BLOCKS = 48000
-DEFAULT_MAX_HEIGHT_DIFF   = 6.4
+DEFAULT_MAX_HEIGHT_DIFF   = 6.4 #was 6.4
 DEFAULT_MIN_POND_SIZE_SQM = 32400
 #MAX_POND_SIZE = 5500
 POND_NO_DATA = 0
+PREFER_SITES = False
+PREFER_NNEIGH = False
+
 # =============================================================================
 def Usage():
     print('Usage: build_ponds.py indem inpixelpairs outraster outshp\n')
@@ -156,6 +159,11 @@ class Fringe(object):
 
             return (c.x, c.y), c.elevation
 
+    def __str__(self):
+        return "{'Upper': %s, 'Lower': %s}" % (
+            str(self._upper_fringe), 
+            str(self._lower_fringe))
+
     def update_mean(self, new_mean):
         self.mean_elevation = new_mean
         for site, i in product([True, False], range(8, -1, -1)):
@@ -164,8 +172,6 @@ class Fringe(object):
                 repartition_lists(lower, upper, self.mean_elevation)
 
     def _find_next_fringe(self):
-        PREFER_SITES = False
-        PREFER_NNEIGH = False
         
         if PREFER_SITES and PREFER_NNEIGH:
             groups = ([
@@ -373,7 +379,7 @@ class PondBuilder(object):
             pond_size = 1
             mean_diff = 0.0
             pond_mean_elevation = elevation
-            pond_sum_elevation = elevation
+            pond_sum_elevation = long(elevation)
         #    print "Added pixel 1, elevation %f." % pond_sum_elevation
             fringe = Fringe(elevation, pond_pixels)
             # there is no do while, so we'll manually break out of the loop
@@ -402,12 +408,16 @@ class PondBuilder(object):
                 try:
                     new_pixel, new_elevation = fringe.next()
                 except StopIteration:
+                    # print "Fringe empty"
                     break
                 # if the closest pixel is too far away, then we are done
                 # now recalculate pond statistics
                 pond_size += 1
                 pond_sum_elevation += new_elevation
                 pond_mean_elevation = float(pond_sum_elevation) / pond_size
+                # print "Sum %s, count %s, mean %s" % (
+                #     str(pond_sum_elevation), 
+                #     str(pond_size), str(pond_mean_elevation))
                 pond_pixels[new_pixel] = new_elevation
                 # calculate total pond earth to move
                 old_mean_diff = mean_diff
@@ -420,6 +430,19 @@ class PondBuilder(object):
                 mean_diff = total_diff / pond_size
                 # If the closest pond isn't close enough
                 if mean_diff > self.max_height_diff:
+                    # print ("Diff overflow: %.2f > %.2f\n" 
+                    #        "Previously %.2f\n"
+                    #        "Old mean: %.2f (%.2f), mean pixel %.2f") % (
+                    #     mean_diff, self.max_height_diff,
+                    #     old_mean_diff,
+                    #     float(pond_sum_elevation - new_elevation) 
+                    #     / (pond_size-1),
+                    #     pond_mean_elevation,
+                    #     new_elevation)
+                    # print "Diffs: %s" % (
+                    #     [(x, abs(x - pond_mean_elevation)) for x in pond_pixels.values()])
+                    
+                    # print str(fringe)
                     del pond_pixels[new_pixel]
                     mean_diff = old_mean_diff
                     pond_size -= 1
@@ -429,7 +452,7 @@ class PondBuilder(object):
                 fringe.update_mean(pond_mean_elevation)
 
             if pond_size >= self.min_pond_pixels:
-#                print "Found pond %d, %d pixels" % (self.pond_num, pond_size)        
+                # print "Found pond %d, %d pixels" % (self.pond_num, pond_size)        
                 #save the found pond to buffer
                 for save_pixel, save_elevation in pond_pixels.items():
                     self.io.set_pixel(self.outband, save_pixel, self.pond_num)
