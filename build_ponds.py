@@ -1,7 +1,10 @@
 #!/usr/bin/env python
-
-from osgeo import gdal, ogr, osr
-from osgeo.gdalconst import *
+try:
+    from osgeo import gdal, ogr, osr
+    from osgeo.gdalconst import *
+except ImportError:
+    import gdal, ogr, osr
+    from gdalconst import *
 import numpy
 import sys
 import locale
@@ -42,7 +45,7 @@ def is_no_data(nd, val):
             str(nd), str(type(nd))))
     sys.exit(1)
 
-# Find all neighbours 
+# Find all neighbours
 def neighbouring_pixels((px, py), n=8, extent=None):
     if n == 8:
         nonzero = (pair for pair in product((-1,0,1),(-1,0,1)) if pair != (0, 0))
@@ -82,7 +85,7 @@ class Fringe(object):
         # contain (x, y) tuples
         self._bad_fringe = set()
         self._pond = pond
-        
+
     def __contains__(self, pixel):
         return pixel in self._fringe_pixels or pixel in self._bad_fringe
 
@@ -114,12 +117,12 @@ class Fringe(object):
         else:
             t = False
         old_pixel = self._fringe_pixels[pixel]
-        new_pixel = Pixel(old_pixel.x, 
+        new_pixel = Pixel(old_pixel.x,
                           old_pixel.y,
                           old_pixel.elevation,
                           old_pixel.n_neighbours + 1,
                           old_pixel.is_site)
-        
+
         if old_pixel.elevation > self.mean_elevation:
             fringe = self._upper_fringe
         else:
@@ -128,7 +131,7 @@ class Fringe(object):
         #print old_pixel
         if t:
             #print "before: %s" % fringe
-            print "[%s][%s] -> [%s][%s]" % (old_pixel.is_site, 
+            print "[%s][%s] -> [%s][%s]" % (old_pixel.is_site,
                                             old_pixel.n_neighbours,
                                             new_pixel.is_site,
                                             new_pixel.n_neighbours)
@@ -167,7 +170,7 @@ class Fringe(object):
 
     def __str__(self):
         return "{'Upper': %s, 'Lower': %s}" % (
-            str(self._upper_fringe), 
+            str(self._upper_fringe),
             str(self._lower_fringe))
 
     def update_mean(self, new_mean):
@@ -179,42 +182,42 @@ class Fringe(object):
                 repartition_lists(lower, upper, self.mean_elevation)
 
     def _find_next_fringe(self):
-        
+
         if PREFER_SITES and PREFER_NNEIGH:
             groups = ([
-                    self._upper_fringe[site][n], 
-                    self._lower_fringe[site][n]] 
-                      for site, n in 
+                    self._upper_fringe[site][n],
+                    self._lower_fringe[site][n]]
+                      for site, n in
                       product([True, False], xrange(8, -1, -1)))
         elif PREFER_SITES and not PREFER_NNEIGH:
             def f():
                 for b in [True, False]:
-                    yield  [f[b][i] for i, f, b in 
-                            product(xrange(8, -1, -1), 
-                                    [self._lower_fringe, self._upper_fringe], 
+                    yield  [f[b][i] for i, f, b in
+                            product(xrange(8, -1, -1),
+                                    [self._lower_fringe, self._upper_fringe],
                                     [b])]
             groups = f()
         elif (not PREFER_SITES) and PREFER_NNEIGH:
-            groups = ([self._lower_fringe[True][i], 
+            groups = ([self._lower_fringe[True][i],
                        self._lower_fringe[False][i],
-                       self._upper_fringe[True][i], 
-                       self._upper_fringe[False][i]] 
+                       self._upper_fringe[True][i],
+                       self._upper_fringe[False][i]]
                       for i in xrange(8, -1, -1))
         else:
             assert (not PREFER_SITES) and (not PREFER_NNEIGH)
             def f():
-                yield [f[b][i] 
-                       for f, i, b in 
+                yield [f[b][i]
+                       for f, i, b in
                        product([self._lower_fringe, self._upper_fringe],
-                               range(8, -1, -1), 
+                               range(8, -1, -1),
                                [True, False])]
 
             groups = f()
-    
+
         for group in groups:
             closest = self._find_closest_list_head(
                 group,
-                (lambda x: x[0].elevation), 
+                (lambda x: x[0].elevation),
                 self.mean_elevation)
             if not closest is None:
                 return closest
@@ -291,8 +294,8 @@ class PondBuilder(object):
         self.outband.SetNoDataValue(POND_NO_DATA)
 
         print "Initialising empty new raster."
-        # Cast to float, as band. From the docs, "The fill value is 
-        # passed in as a double but this will be converted to the 
+        # Cast to float, as band. From the docs, "The fill value is
+        # passed in as a double but this will be converted to the
         # underlying type before writing to the file. "
         self.outband.Fill(float(POND_NO_DATA))
 
@@ -363,7 +366,7 @@ class PondBuilder(object):
         print "Using minimum pond size of %.2f sq.m, which requires %d pixels of %.2f x %.2f m." % (
             self.min_pond_size_sqm, self.min_pond_pixels, self.xcellsize, self.ycellsize)
         self.prepare_no_data()
-        
+
         self.io = MultiBandBlockIO((self.indemband, self.inpxpairsband, self.outband), CACHE_BLOCKS, True)
 
         self.total_pixel_count = self.indemband.XSize * self.indemband.YSize
@@ -374,11 +377,11 @@ class PondBuilder(object):
         self.pond_num = POND_NO_DATA + 1
         self.pond_attributes = {}
         pixel_check_count = 0
-        for (demblock, pxpairsblock, outblock), block_x, block_y, world_x, world_y in ( 
+        for (demblock, pxpairsblock, outblock), block_x, block_y, world_x, world_y in (
             self.io.extent_iterator(*self.world_extent)):
             if self.can_skip_pixel(demblock, pxpairsblock, outblock, block_x, block_y):
                 continue
-            elevation = demblock.data[block_y][block_x]    
+            elevation = demblock.data[block_y][block_x]
             new_pixel = (world_x, world_y)
             # Make a pond
             pond_pixels = {new_pixel: elevation}
@@ -391,11 +394,11 @@ class PondBuilder(object):
             fringe = Fringe(elevation, pond_pixels)
             # there is no do while, so we'll manually break out of the loop
         #    print "New pond, number %4d" % pond_num
-            while True: 
+            while True:
                 # add surrounding 8 pixels to the fringe if valid
                 for f in neighbouring_pixels(new_pixel, 4, self.world_extent):
                     # screen out any pixels we don't want in the fringe
-                    if (f in fringe or 
+                    if (f in fringe or
                         f in pond_pixels):
                         continue
                     f_demval, f_pairval, f_outval = self.io.get_pixel(f)
@@ -410,7 +413,7 @@ class PondBuilder(object):
                     # add valid pixel to fringe
                     is_site = not is_no_data(self.pxpairs_no_data, f_pairval)
                     fringe.add(f, f_demval, is_site)
-                    
+
                 # if the fringes are empty, then we have finished this pond
                 try:
                     new_pixel, new_elevation = fringe.next()
@@ -423,7 +426,7 @@ class PondBuilder(object):
                 pond_sum_elevation += new_elevation
                 pond_mean_elevation = float(pond_sum_elevation) / pond_size
                 # print "Sum %s, count %s, mean %s" % (
-                #     str(pond_sum_elevation), 
+                #     str(pond_sum_elevation),
                 #     str(pond_size), str(pond_mean_elevation))
                 pond_pixels[new_pixel] = new_elevation
                 # calculate total pond earth to move
@@ -437,18 +440,18 @@ class PondBuilder(object):
                 mean_diff = total_diff / pond_size
                 # If the closest pond isn't close enough
                 if mean_diff > self.max_height_diff:
-                    # print ("Diff overflow: %.2f > %.2f\n" 
+                    # print ("Diff overflow: %.2f > %.2f\n"
                     #        "Previously %.2f\n"
                     #        "Old mean: %.2f (%.2f), mean pixel %.2f") % (
                     #     mean_diff, self.max_height_diff,
                     #     old_mean_diff,
-                    #     float(pond_sum_elevation - new_elevation) 
+                    #     float(pond_sum_elevation - new_elevation)
                     #     / (pond_size-1),
                     #     pond_mean_elevation,
                     #     new_elevation)
                     # print "Diffs: %s" % (
                     #     [(x, abs(x - pond_mean_elevation)) for x in pond_pixels.values()])
-                    
+
                     # print str(fringe)
                     del pond_pixels[new_pixel]
                     mean_diff = old_mean_diff
@@ -459,7 +462,7 @@ class PondBuilder(object):
                 fringe.update_mean(pond_mean_elevation)
 
             if pond_size >= self.min_pond_pixels:
-                # print "Found pond %d, %d pixels" % (self.pond_num, pond_size)        
+                # print "Found pond %d, %d pixels" % (self.pond_num, pond_size)
                 #save the found pond to buffer
                 for save_pixel, save_elevation in pond_pixels.items():
                     self.io.set_pixel(self.outband, save_pixel, self.pond_num)
@@ -470,7 +473,7 @@ class PondBuilder(object):
                 print "Found pond %d, %d pixels (%.2f m sq.), mean elevation %.2f, total_earth_to_move %.2f" % (self.pond_num, pond_size, pond_m2,
                                                   pond_mean_elevation,
                                                   total_diff * pond_m2)
-                self.io.write_flush() 
+                self.io.write_flush()
                 self.pond_num += 1
             pixel_check_count += 1
             period = int(self.total_pixel_count / 100)
