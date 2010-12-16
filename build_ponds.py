@@ -424,6 +424,7 @@ class PondBuilder(object):
                 # now recalculate pond statistics
                 pond_size += 1
                 pond_sum_elevation += new_elevation
+                #print new_elevation, self.dem_no_data, pond_sum_elevation
                 pond_mean_elevation = float(pond_sum_elevation) / pond_size
                 # print "Sum %s, count %s, mean %s" % (
                 #     str(pond_sum_elevation),
@@ -435,9 +436,15 @@ class PondBuilder(object):
                 # net mean diff means that any cutting and filling can be combined
                 # gross:
                 total_diff = sum([abs(x - pond_mean_elevation) for x in pond_pixels.values()])
+                mean_diff = total_diff / pond_size
+
+                if pond_size % 100 == 0 and pond_size > 0:
+                    print ("Total elevation: %010d, n pixels %05d, mean "
+                            "elevation %05.2f, mean diff %04.2f") % (
+                            pond_sum_elevation, pond_size, pond_mean_elevation,
+                            mean_diff)
                 #net
                 # total_diff = abs(sum(map(lambda x: x - pond_mean_elevation, pond_pixels.values())))
-                mean_diff = total_diff / pond_size
                 # If the closest pond isn't close enough
                 if mean_diff > self.max_height_diff:
                     # print ("Diff overflow: %.2f > %.2f\n"
@@ -475,6 +482,8 @@ class PondBuilder(object):
                                                   total_diff * pond_m2)
                 self.io.write_flush()
                 self.pond_num += 1
+            else:
+                print "Rejected pond of %d pixels" % pond_size
             pixel_check_count += 1
             period = int(self.total_pixel_count / 100)
             if self.total_pixel_count % pixel_check_count == period:

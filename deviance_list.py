@@ -114,7 +114,7 @@ if __name__ ==  "__main__":
     import random
     dv =  deviance_list()
     # Test against some random data,  and calculate result manually to ensure correctness
-    rands = [random.randint(-100,  100) for _ in range(0,  1000)]
+    rands = [random.randint(-100,  100) for _ in range(0,  100)]
     ns = []
     for n in rands: 
         dv.append(n)
@@ -128,7 +128,24 @@ if __name__ ==  "__main__":
         real_abs_dev = sum([abs(m - x) for x in ns])
         assert abs(real_abs_dev - dv.absolute_deviance) < 0.01, (
             "Absolute deviances not equal. Real:%.2f,  calc:%.2f" %  (real_abs_dev,  dv.absolute_deviance))
-
+    # time it...
+    import time
+    rands = [random.randint(-100,  100) for _ in range(0,  10000)]
+    dv =  deviance_list()
+    t =  time.time()
+    for n in rands: 
+        dv.append(n)
+        ad =  dv.absolute_deviance
+    tt =  time.time() -  t
+    print "deviant list took %.2fs on % d items" %  (tt,  len(rands))
+    
+    ns =  []
+    t =  time.time()
+    for n in rands: 
+        ns.append(n)
+        ad =  sum([abs(m - x) for x in ns])
+    tt =  time.time() -  t
+    print "standard list took %.2fs on % d items" %  (tt,  len(rands))
 
 
 
